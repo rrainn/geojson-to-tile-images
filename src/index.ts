@@ -98,7 +98,7 @@ function latLonToWebMercator(lon: number, lat: number): [number, number] {
  * @param yScalingFactor - Pixels per degree latitude for this tile
  * @returns Array of pixel coordinates [x, y] where (0,0) is top-left
  */
-function transformCoordinatesToPixels(geoJSON: GeoJSON.Position[] | GeoJSON.Position[][], imageBBox: number[], size: number, xScalingFactor: number, yScalingFactor: number): [number, number][] {
+function transformCoordinatesToPixels(geoJSON: GeoJSON.Position[], imageBBox: number[], size: number, xScalingFactor: number, yScalingFactor: number): [number, number][] {
 	return geoJSON.map(([geoX, geoY]) => {
 		if (typeof geoX !== "number" || typeof geoY !== "number") {
 			throw new Error("Invalid GeoJSON");
@@ -118,6 +118,10 @@ function transformCoordinatesToPixels(geoJSON: GeoJSON.Position[] | GeoJSON.Posi
 		
 		return [x, y];
 	});
+}
+
+function transformPolygonCoordinatesToPixels(coordinates: GeoJSON.Position[][], imageBBox: number[], size: number, xScalingFactor: number, yScalingFactor: number): [number, number][][] {
+	return coordinates.map(ring => transformCoordinatesToPixels(ring, imageBBox, size, xScalingFactor, yScalingFactor));
 }
 
 /**
@@ -184,11 +188,23 @@ export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | Ge
 				continue;
 			}
 
-			// Convert the clipped polygon coordinates to pixel coordinates
-			const transformedPoints = transformCoordinatesToPixels(intersectingPolygon.geometry.coordinates[0], mercatorBBox, size, xScalingFactor, yScalingFactor);
+			// Handle both Polygon and MultiPolygon results from intersection
+			const polygonCoordinates = intersectingPolygon.geometry.type === "Polygon" 
+				? [intersectingPolygon.geometry.coordinates]
+				: intersectingPolygon.geometry.coordinates;
 
-			// Add polygon to SVG with styling from feature properties
-			svg += `<polygon points="${transformedPoints.map(([x, y]) => `${x},${y}`).join(" ")}" fill="${feature.properties?.["fill"] ?? "black"}" fill-opacity="${feature.properties?.["fill-opacity"] ?? "1.0"}" />`;
+			// Create SVG path for all polygons (handles holes with evenodd fill-rule)
+			let pathData = "";
+			for (const polygonRings of polygonCoordinates) {
+				const transformedRings = transformPolygonCoordinatesToPixels(polygonRings, mercatorBBox, size, xScalingFactor, yScalingFactor);
+				transformedRings.forEach((ring) => {
+					const ringPath = ring.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x},${y}`).join(" ");
+					pathData += ringPath + " Z ";
+				});
+			}
+
+			// Add polygon to SVG with styling from feature properties, using evenodd fill-rule for holes
+			svg += `<path d="${pathData}" fill="${feature.properties?.["fill"] ?? "black"}" fill-opacity="${feature.properties?.["fill-opacity"] ?? "1.0"}" fill-rule="evenodd" />`;
 			
 		} else if (feature.geometry.type === "LineString") {
 			// For linestrings, convert coordinates directly (SVG will clip at boundaries)
