@@ -96,9 +96,10 @@ function latLonToWebMercator(lon: number, lat: number): [number, number] {
  * @param size - Size of the tile image in pixels
  * @param xScalingFactor - Pixels per degree longitude for this tile
  * @param yScalingFactor - Pixels per degree latitude for this tile
+ * @param offset - Offset to add to coordinates (for canvas buffer)
  * @returns Array of pixel coordinates [x, y] where (0,0) is top-left
  */
-function transformCoordinatesToPixels(geoJSON: GeoJSON.Position[], imageBBox: number[], size: number, xScalingFactor: number, yScalingFactor: number): [number, number][] {
+function transformCoordinatesToPixels(geoJSON: GeoJSON.Position[], imageBBox: number[], size: number, xScalingFactor: number, yScalingFactor: number, offset: number = 0): [number, number][] {
 	return geoJSON.map(([geoX, geoY]) => {
 		if (typeof geoX !== "number" || typeof geoY !== "number") {
 			throw new Error("Invalid GeoJSON");
@@ -110,18 +111,18 @@ function transformCoordinatesToPixels(geoJSON: GeoJSON.Position[], imageBBox: nu
 
 		// Transform from projected coordinates to pixel coordinates
 		// Subtract the tile's minimum bounds to get relative position
-		const x = (mercX - imageBBox[0]) * xScalingFactor;
+		const x = (mercX - imageBBox[0]) * xScalingFactor + offset;
 
 		// Invert Y axis because screen coordinates have Y=0 at top
 		// while geographic coordinates have Y increasing northward
-		const y = size - (mercY - imageBBox[1]) * yScalingFactor;
+		const y = size - (mercY - imageBBox[1]) * yScalingFactor + offset;
 
 		return [x, y];
 	});
 }
 
-function transformPolygonCoordinatesToPixels(coordinates: GeoJSON.Position[][], imageBBox: number[], size: number, xScalingFactor: number, yScalingFactor: number): [number, number][][] {
-	return coordinates.map(ring => transformCoordinatesToPixels(ring, imageBBox, size, xScalingFactor, yScalingFactor));
+function transformPolygonCoordinatesToPixels(coordinates: GeoJSON.Position[][], imageBBox: number[], size: number, xScalingFactor: number, yScalingFactor: number, offset: number = 0): [number, number][][] {
+	return coordinates.map(ring => transformCoordinatesToPixels(ring, imageBBox, size, xScalingFactor, yScalingFactor, offset));
 }
 
 /**
@@ -234,11 +235,6 @@ export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | Ge
 			const x = (mercX - mercatorBBox[0]) * xScalingFactor;
 			const y = size - (mercY - mercatorBBox[1]) * yScalingFactor;
 
-			// Skip if point is outside the tile bounds
-			if (x < 0 || x > size || y < 0 || y > size) {
-				continue;
-			}
-
 			// Get text properties with defaults
 			const text = feature.properties?.["text"];
 			if (!text) {
@@ -246,13 +242,57 @@ export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | Ge
 				continue;
 			}
 
-			const fontFamily = feature.properties?.["font-family"] ?? "Arial";
 			const fontSize = feature.properties?.["font-size"] ?? 14;
+			const textAnchor = feature.properties?.["text-anchor"] ?? "middle";
+			const dominantBaseline = feature.properties?.["dominant-baseline"] ?? "middle";
+
+			// Calculate buffer zone for text that might extend into the tile
+			// Be VERY generous with buffer to ensure text spanning multiple tiles is rendered
+			// This is critical for country names and other large labels
+			// Estimate maximum text width more conservatively
+			const estimatedTextWidth = fontSize * text.length * 1.0; // Assume worst-case character width
+
+			// Use very large buffer to handle text that spans multiple tiles
+			// We want to render text even if its center is far outside the tile
+			const horizontalBuffer = estimatedTextWidth; // Full text width as buffer
+			const verticalBuffer = fontSize * 3; // Generous vertical buffer
+
+			// Adjust horizontal buffer based on text anchor
+			let leftBuffer = horizontalBuffer;
+			let rightBuffer = horizontalBuffer;
+			if (textAnchor === "start") {
+				// For start-anchored text, we need minimal left buffer but full right buffer
+				leftBuffer = fontSize;
+				rightBuffer = estimatedTextWidth;
+			} else if (textAnchor === "end") {
+				// For end-anchored text, we need full left buffer but minimal right buffer
+				leftBuffer = estimatedTextWidth;
+				rightBuffer = fontSize;
+			} else {
+				// For middle-anchored text, buffer is half the text width on each side
+				leftBuffer = rightBuffer = estimatedTextWidth / 2 + fontSize;
+			}
+
+			// Adjust vertical buffer based on dominant baseline
+			let topBuffer = verticalBuffer;
+			let bottomBuffer = verticalBuffer;
+			if (dominantBaseline === "top" || dominantBaseline === "text-before-edge") {
+				topBuffer = fontSize * 0.5;
+				bottomBuffer = fontSize * 2; // Full buffer below for top-aligned text
+			} else if (dominantBaseline === "bottom" || dominantBaseline === "text-after-edge") {
+				topBuffer = fontSize * 2; // Full buffer above for bottom-aligned text
+				bottomBuffer = fontSize * 0.5;
+			}
+
+			// Check if text might be visible on this tile (with buffer)
+			if (x < -leftBuffer || x > size + rightBuffer || y < -topBuffer || y > size + bottomBuffer) {
+				continue;
+			}
+
+			const fontFamily = feature.properties?.["font-family"] ?? "Arial";
 			const fontWeight = feature.properties?.["font-weight"] ?? "normal";
 			const color = feature.properties?.["color"] ?? "black";
 			const opacity = feature.properties?.["opacity"] ?? 1.0;
-			const textAnchor = feature.properties?.["text-anchor"] ?? "middle";
-			const dominantBaseline = feature.properties?.["dominant-baseline"] ?? "middle";
 
 			// Map simplified baseline values to SVG values
 			let svgBaseline = dominantBaseline;
