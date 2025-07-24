@@ -133,7 +133,7 @@ function transformPolygonCoordinatesToPixels(coordinates: GeoJSON.Position[][], 
  * @param settings - Optional settings for tile appearance
  * @returns PNG image buffer of the rendered tile
  */
-export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.LineString> | GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString>, tile: [number, number, number], settings?: Settings): Promise<Buffer> {
+export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.Point> | GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.Point>, tile: [number, number, number], settings?: Settings): Promise<Buffer> {
 	const size = settings?.size ?? 256;
 
 	// Create a blank image with specified or default background
@@ -152,7 +152,7 @@ export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | Ge
 	});
 
 	// Ensure we have a feature collection to work with
-	let collection: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString>;
+	let collection: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.Point>;
 	if (geojson.type === "FeatureCollection") {
 		collection = geojson;
 	} else {
@@ -213,6 +213,48 @@ export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | Ge
 			// Add polyline to SVG with styling from feature properties
 			svg += `<polyline points="${transformedPoints.map(([x, y]) => `${x},${y}`).join(" ")}" fill="none" stroke="${feature.properties?.["stroke"] ?? "black"}" stroke-width="${feature.properties?.["stroke-width"] ?? "1"}" stroke-opacity="${feature.properties?.["stroke-opacity"] ?? "1.0"}" />`;
 
+		} else if (feature.geometry.type === "Point") {
+			// For points with text, convert the single coordinate
+			const [lon, lat] = feature.geometry.coordinates;
+			if (typeof lon !== "number" || typeof lat !== "number") {
+				throw new Error("Invalid Point coordinates");
+			}
+
+			// Transform the point to pixel coordinates
+			const [mercX, mercY] = latLonToWebMercator(lon, lat);
+			const x = (mercX - mercatorBBox[0]) * xScalingFactor;
+			const y = size - (mercY - mercatorBBox[1]) * yScalingFactor;
+
+			// Skip if point is outside the tile bounds
+			if (x < 0 || x > size || y < 0 || y > size) {
+				continue;
+			}
+
+			// Get text properties with defaults
+			const text = feature.properties?.["text"];
+			if (!text) {
+				// Skip points without text
+				continue;
+			}
+
+			const fontFamily = feature.properties?.["font-family"] ?? "Arial";
+			const fontSize = feature.properties?.["font-size"] ?? 14;
+			const fontWeight = feature.properties?.["font-weight"] ?? "normal";
+			const color = feature.properties?.["color"] ?? "black";
+			const opacity = feature.properties?.["opacity"] ?? 1.0;
+			const textAnchor = feature.properties?.["text-anchor"] ?? "middle";
+			const dominantBaseline = feature.properties?.["dominant-baseline"] ?? "middle";
+
+			// Map simplified baseline values to SVG values
+			let svgBaseline = dominantBaseline;
+			if (dominantBaseline === "top") {
+				svgBaseline = "text-before-edge";
+			} else if (dominantBaseline === "bottom") {
+				svgBaseline = "text-after-edge";
+			}
+
+			// Add text element to SVG
+			svg += `<text x="${x}" y="${y}" font-family="${fontFamily}" font-size="${fontSize}" font-weight="${fontWeight}" fill="${color}" fill-opacity="${opacity}" text-anchor="${textAnchor}" dominant-baseline="${svgBaseline}">${text}</text>`;
 		} else {
 			// Throwing an error for JavaScript users. TypeScript users should have already caught this error during compilation due to invalid types.
 			throw new Error(`Unsupported geometry type: ${(feature as any).geometry.type}`);

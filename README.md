@@ -50,6 +50,21 @@ const geoJSON = {
 				],
 				"type": "Polygon"
 			}
+		},
+		{
+			"type": "Feature",
+			"properties": {
+				"text": "Washington DC",
+				"font-size": 16,
+				"font-weight": "bold",
+				"color": "#333333",
+				"text-anchor": "middle",
+				"dominant-baseline": "middle"
+			},
+			"geometry": {
+				"type": "Point",
+				"coordinates": [-77.009, 38.8895]
+			}
 		}
 	]
 };
@@ -72,14 +87,28 @@ const geoJSON = {
 
 - Polygon
 - LineString
+- Point (for text rendering)
 
 ## Supported GeoJSON Properties
 
-- fill (only for Polygon)
-- fill-opacity (only for Polygon)
-- stroke (only for LineString)
-- stroke-opacity (only for LineString)
-- stroke-width (only for LineString)
+### Polygon
+- `fill` - Fill color (default: "black")
+- `fill-opacity` - Fill opacity 0-1 (default: 1.0)
+
+### LineString
+- `stroke` - Stroke color (default: "black") 
+- `stroke-opacity` - Stroke opacity 0-1 (default: 1.0)
+- `stroke-width` - Stroke width in pixels (default: 1)
+
+### Point (Text)
+- `text` - Text content to display (required)
+- `font-family` - Font family (default: "Arial")
+- `font-size` - Font size in pixels (default: 14)
+- `font-weight` - Font weight: "normal", "bold", or 100-900 (default: "normal")
+- `color` - Text color (default: "black")
+- `opacity` - Text opacity 0-1 (default: 1.0)
+- `text-anchor` - Horizontal alignment: "start", "middle", "end" (default: "middle")
+- `dominant-baseline` - Vertical alignment: "top", "middle", "bottom" (default: "middle")
 
 ## License
 
