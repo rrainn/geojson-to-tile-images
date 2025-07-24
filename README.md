@@ -87,6 +87,7 @@ const geoJSON = {
 
 - Polygon
 - LineString
+- MultiLineString
 - Point (for text rendering)
 
 ## Supported GeoJSON Properties
@@ -95,8 +96,8 @@ const geoJSON = {
 - `fill` - Fill color (default: "black")
 - `fill-opacity` - Fill opacity 0-1 (default: 1.0)
 
-### LineString
-- `stroke` - Stroke color (default: "black") 
+### LineString / MultiLineString
+- `stroke` - Stroke color (default: "black")
 - `stroke-opacity` - Stroke opacity 0-1 (default: 1.0)
 - `stroke-width` - Stroke width in pixels (default: 1)
 

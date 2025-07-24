@@ -133,7 +133,7 @@ function transformPolygonCoordinatesToPixels(coordinates: GeoJSON.Position[][], 
  * @param settings - Optional settings for tile appearance
  * @returns PNG image buffer of the rendered tile
  */
-export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.Point> | GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.Point>, tile: [number, number, number], settings?: Settings): Promise<Buffer> {
+export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.MultiLineString | GeoJSON.Point> | GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.MultiLineString | GeoJSON.Point>, tile: [number, number, number], settings?: Settings): Promise<Buffer> {
 	const size = settings?.size ?? 256;
 
 	// Create a blank image with specified or default background
@@ -152,7 +152,7 @@ export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | Ge
 	});
 
 	// Ensure we have a feature collection to work with
-	let collection: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.Point>;
+	let collection: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.LineString | GeoJSON.MultiLineString | GeoJSON.Point>;
 	if (geojson.type === "FeatureCollection") {
 		collection = geojson;
 	} else {
@@ -212,6 +212,15 @@ export default async function main(geojson: GeoJSON.Feature<GeoJSON.Polygon | Ge
 
 			// Add polyline to SVG with styling from feature properties
 			svg += `<polyline points="${transformedPoints.map(([x, y]) => `${x},${y}`).join(" ")}" fill="none" stroke="${feature.properties?.["stroke"] ?? "black"}" stroke-width="${feature.properties?.["stroke-width"] ?? "1"}" stroke-opacity="${feature.properties?.["stroke-opacity"] ?? "1.0"}" />`;
+
+		} else if (feature.geometry.type === "MultiLineString") {
+			// For multilinestrings, render each linestring separately
+			for (const lineStringCoords of feature.geometry.coordinates) {
+				const transformedPoints = transformCoordinatesToPixels(lineStringCoords, mercatorBBox, size, xScalingFactor, yScalingFactor);
+
+				// Add polyline to SVG with styling from feature properties (same styling for all lines)
+				svg += `<polyline points="${transformedPoints.map(([x, y]) => `${x},${y}`).join(" ")}" fill="none" stroke="${feature.properties?.["stroke"] ?? "black"}" stroke-width="${feature.properties?.["stroke-width"] ?? "1"}" stroke-opacity="${feature.properties?.["stroke-opacity"] ?? "1.0"}" />`;
+			}
 
 		} else if (feature.geometry.type === "Point") {
 			// For points with text, convert the single coordinate
